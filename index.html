@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sportic Status Tracking</title>
     <link rel="shortcut icon" href="pic_2.jpg" type="image/x-icon" />
-    <link 
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.6/dist/css/bootstrap.min.css" 
-      rel="stylesheet" 
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.6/dist/css/bootstrap.min.css"
+      rel="stylesheet"
       crossorigin="anonymous" />
   </head>
   <body>
@@ -43,7 +43,7 @@
             <th>#</th>
             <th>Task</th>
             <th>Status</th>
-            <th>Assigned || Completed</th>
+            <th>Individuals</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -54,14 +54,12 @@
     </div>
     
     <!-- Add/Update Task Modal -->
-    <div class="modal fade" id="editStatusModal" tabindex="-1" aria-labelledby="editStatusModalLabel" 
-         aria-hidden="true">
+    <div class="modal fade" id="editStatusModal" tabindex="-1" aria-labelledby="editStatusModalLabel" aria-hidden="true">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
             <h5 id="editStatusModalLabel" class="modal-title">Add Task</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" 
-                    aria-label="Close"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
             <form id="updateForm">
@@ -89,151 +87,174 @@
             </form>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" 
-                    data-bs-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             <button type="button" id="saveStatus" class="btn btn-primary">Save Changes</button>
           </div>
         </div>
       </div>
     </div>
     
-    <!-- Scripts: SQL.js, jQuery, and Bootstrap JS -->
+    <!-- Scripts: SQL.js, jQuery, Bootstrap JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.6/dist/js/bootstrap.bundle.min.js" 
-            crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.6/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
     
     <script>
       $(document).ready(function () {
-        // Initialize SQL.js and create our in-memory SQLite database.
+        // Initialize SQL.js.
         initSqlJs({
           locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
         }).then(function(SQL) {
-          const db = new SQL.Database();
-          db.run("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, assigned TEXT, status TEXT);");
+          // Attempt to load your local SQLite db "satuts.db".
+          fetch("satuts.db")
+            .then(response => {
+              if (!response.ok) {
+                throw new Error("Failed to fetch satuts.db");
+              }
+              return response.arrayBuffer();
+            })
+            .then(data => {
+              // Create a database instance from the fetched file.
+              const db = new SQL.Database(new Uint8Array(data));
+              // Ensure the tasks table exists.
+              db.run("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, assigned TEXT, status TEXT);");
+              
+              setupApp(db, SQL);
+            })
+            .catch(error => {
+              console.error("Error loading local db: ", error);
+              // Fallback: Create a new in-memory database.
+              const db = new SQL.Database();
+              db.run("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, assigned TEXT, status TEXT);");
+              
+              setupApp(db, SQL);
+            });
       
-          // Create a Bootstrap modal instance.
-          const modalElement = document.getElementById('editStatusModal');
-          const myModal = new bootstrap.Modal(modalElement);
+          // Application logic: event handlers and UI updates.
+          function setupApp(db, SQL) {
+            // Create a Bootstrap modal instance.
+            const modalElement = document.getElementById('editStatusModal');
+            const myModal = new bootstrap.Modal(modalElement);
       
-          // Function to fetch tasks, apply search filters, and render them in the table.
-          function fetchTasks() {
-            const taskNameFilter = $("#searchTaskName").val().toLowerCase();
-            const progressFilter = $("#searchProgress").val();
-            $("#taskTable").empty();
+            // Function to fetch tasks from the SQLite DB, apply search filters, and render them in the table.
+            function fetchTasks() {
+              const taskNameFilter = $("#searchTaskName").val().toLowerCase();
+              const progressFilter = $("#searchProgress").val();
+              $("#taskTable").empty();
       
-            let hasTasks = false;
-            let res = db.exec("SELECT * FROM tasks");
-            if (res.length > 0) {
-              let result = res[0];
-              result.values.forEach(function(row) {
-                // Each row: [id, name, assigned, status]
-                let id = row[0],
-                    name = row[1],
-                    assigned = row[2],
-                    status = row[3];
+              let hasTasks = false;
+              let res = db.exec("SELECT * FROM tasks");
+              if (res.length > 0) {
+                let result = res[0];
+                result.values.forEach(function(row) {
+                  // row: [id, name, assigned, status]
+                  let id = row[0],
+                      name = row[1],
+                      assigned = row[2],
+                      status = row[3];
       
-                // Apply search filters.
-                if (taskNameFilter && !name.toLowerCase().includes(taskNameFilter)) return;
-                if (progressFilter && status !== progressFilter) return;
+                  // Apply search filters.
+                  if (taskNameFilter && !name.toLowerCase().includes(taskNameFilter)) return;
+                  if (progressFilter && status !== progressFilter) return;
       
-                hasTasks = true;
-                // Append row to the table with update and delete buttons.
-                $("#taskTable").append(`
-                  <tr data-task-id="${id}">
-                    <th>${id}</th>
-                    <td>${name}</td>
-                    <td>${status}</td>
-                    <td>${assigned}</td>
-                    <td>
-                      <button class="btn btn-primary btn-sm edit-task" data-task-id="${id}">Update</button>
-                      <button class="btn btn-danger btn-sm delete-task" data-task-id="${id}">Delete</button>
-                    </td>
-                  </tr>
-                `);
-              });
+                  hasTasks = true;
+                  // Append row to the table with update and delete buttons.
+                  $("#taskTable").append(`
+                    <tr data-task-id="${id}">
+                      <th>${id}</th>
+                      <td>${name}</td>
+                      <td>${status}</td>
+                      <td>${assigned}</td>
+                      <td>
+                        <button class="btn btn-primary btn-sm edit-task" data-task-id="${id}">Update</button>
+                        <button class="btn btn-danger btn-sm delete-task" data-task-id="${id}">Delete</button>
+                      </td>
+                    </tr>
+                  `);
+                });
+              }
+      
+              if (!hasTasks) {
+                $("#taskTable").append(`<tr><td colspan="5" class="text-center">No tasks found</td></tr>`);
+              }
             }
       
-            if (!hasTasks) {
-              $("#taskTable").append(`<tr><td colspan="5" class="text-center">No tasks found</td></tr>`);
-            }
-          }
-      
-          // When "Add Today's Task" button is clicked, clear form and show modal in add mode.
-          $("#addTaskBtn").click(() => {
-            $("#task-id").val("");
-            $("#task-name").val("").prop("readonly", false);
-            $("#username").val("");
-            $("#task-progress").val("");
-            $("#editStatusModalLabel").text("Add Task");
-            myModal.show();
-          });
-      
-          // When the update button in the table is clicked, load task details into the modal.
-          $(document).on("click", ".edit-task", function() {
-            const id = $(this).data("task-id");
-            let res = db.exec("SELECT * FROM tasks WHERE id = " + id);
-            if (res.length > 0 && res[0].values.length > 0) {
-              let row = res[0].values[0];
-              $("#task-id").val(row[0]);
-              // Allow editing of the task name.
-              $("#task-name").val(row[1]).prop("readonly", false);
-              $("#username").val(row[2]);
-              $("#task-progress").val(row[3]);
-              $("#editStatusModalLabel").text("Update Task");
+            // "Add Today's Task" button event: clear the form and show the modal for adding a new task.
+            $("#addTaskBtn").click(() => {
+              $("#task-id").val("");
+              $("#task-name").val("").prop("readonly", false);
+              $("#username").val("");
+              $("#task-progress").val("");
+              $("#editStatusModalLabel").text("Add Task");
               myModal.show();
-            }
-          });
+            });
       
-          // Save Changes button event: update existing task or add new one.
-          $("#saveStatus").click(() => {
-            const id = $("#task-id").val();
-            const taskName = $("#task-name").val();
-            const username = $("#username").val();
-            const progress = $("#task-progress").val();
+            // Update event: when an update button in the table is clicked, load the corresponding task details.
+            $(document).on("click", ".edit-task", function() {
+              const id = $(this).data("task-id");
+              let res = db.exec("SELECT * FROM tasks WHERE id = " + id);
+              if (res.length > 0 && res[0].values.length > 0) {
+                let row = res[0].values[0];
+                $("#task-id").val(row[0]);
+                // Allow editing the task name.
+                $("#task-name").val(row[1]).prop("readonly", false);
+                $("#username").val(row[2]);
+                $("#task-progress").val(row[3]);
+                $("#editStatusModalLabel").text("Update Task");
+                myModal.show();
+              }
+            });
       
-            if (!progress) {
-              alert("The progress update field is mandatory!");
-              return;
-            }
+            // Save Changes event: either update an existing task or add a new one.
+            $("#saveStatus").click(() => {
+              const id = $("#task-id").val();
+              const taskName = $("#task-name").val();
+              const username = $("#username").val();
+              const progress = $("#task-progress").val();
       
-            if (id) {
-              // Update existing task including task name.
-              let stmt = db.prepare("UPDATE tasks SET name = ?, assigned = ?, status = ? WHERE id = ?");
-              stmt.bind([taskName, username, progress, id]);
-              stmt.step();
-              stmt.free();
-            } else {
-              // Insert a new task.
-              let stmt = db.prepare("INSERT INTO tasks (name, assigned, status) VALUES (?, ?, ?)");
-              stmt.bind([taskName, username, progress]);
-              stmt.step();
-              stmt.free();
-            }
+              if (!progress) {
+                alert("The progress update field is mandatory!");
+                return;
+              }
       
-            myModal.hide();
-            fetchTasks();
-          });
+              if (id) {
+                // Update existing task (including task name).
+                let stmt = db.prepare("UPDATE tasks SET name = ?, assigned = ?, status = ? WHERE id = ?");
+                stmt.bind([taskName, username, progress, id]);
+                stmt.step();
+                stmt.free();
+              } else {
+                // Insert new task.
+                let stmt = db.prepare("INSERT INTO tasks (name, assigned, status) VALUES (?, ?, ?)");
+                stmt.bind([taskName, username, progress]);
+                stmt.step();
+                stmt.free();
+              }
       
-          // Delete Task event: when the delete button in the table is clicked.
-          $(document).on("click", ".delete-task", function() {
-            const id = $(this).data("task-id");
-            if (confirm("Are you sure you want to delete this task?")) {
-              let stmt = db.prepare("DELETE FROM tasks WHERE id = ?");
-              stmt.bind([id]);
-              stmt.step();
-              stmt.free();
+              myModal.hide();
               fetchTasks();
-            }
-          });
+            });
       
-          // Re-fetch tasks when search filters change.
-          $("#searchTaskName, #searchProgress").on("input change", fetchTasks);
+            // Delete event: handle click on delete button in table.
+            $(document).on("click", ".delete-task", function() {
+              const id = $(this).data("task-id");
+              if (confirm("Are you sure you want to delete this task?")) {
+                let stmt = db.prepare("DELETE FROM tasks WHERE id = ?");
+                stmt.bind([id]);
+                stmt.step();
+                stmt.free();
+                fetchTasks();
+              }
+            });
       
-          // Initially fetch tasks.
-          fetchTasks();
-        }).catch((error) => {
-          console.error("Error initializing SQL.js: ", error);
+            // Re-fetch tasks whenever search filters change.
+            $("#searchTaskName, #searchProgress").on("input change", fetchTasks);
+      
+            // Initially fetch tasks.
+            fetchTasks();
+          }
+        }).catch(error => {
+          console.error("Error initializing SQL.js:", error);
         });
       });
     </script>
